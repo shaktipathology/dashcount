@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Faculty Dashboard - AIIMS Bhopal Pathology</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .sortable:hover {
+            cursor: pointer;
+            background-color: #e5e7eb;
+        }
+        .sort-asc::after {
+            content: ' ▲';
+            font-size: 0.7em;
+        }
+        .sort-desc::after {
+            content: ' ▼';
+            font-size: 0.7em;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <div class="container mx-auto p-4 sm:p-6 md:p-8">
+        
+        <!-- Header Section -->
+        <header class="bg-white shadow-md rounded-lg p-6 mb-8">
+            <h1 class="text-2xl sm:text-3xl font-bold text-blue-800 text-center">Faculty & Resident Dashboard</h1>
+            <p class="text-center text-gray-600 mt-1">Department of Pathology and Lab Medicine, AIIMS Bhopal</p>
+        </header>
+
+        <!-- Controls Section -->
+        <section class="bg-white shadow-md rounded-lg p-6 mb-8">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Search and Sort -->
+                <div>
+                    <h3 class="text-lg font-semibold text-gray-700 mb-2">Search & Filter</h3>
+                    <input type="text" id="search-input" placeholder="Search by Topic, Faculty, Venue etc..." class="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                </div>
+
+                <!-- Class Counter -->
+                <div>
+                    <h3 class="text-lg font-semibold text-gray-700 mb-2">Class Count Calculator</h3>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <select id="staff-select" class="p-2 border border-gray-300 rounded-md col-span-1 sm:col-span-2"></select>
+                        <input type="date" id="count-date" class="p-2 border border-gray-300 rounded-md">
+                    </div>
+                    <button id="calculate-btn" class="mt-3 w-full bg-blue-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-blue-700 transition duration-200">Calculate</button>
+                    <p id="count-result" class="mt-3 text-center font-semibold text-gray-800 h-6"></p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Main Content: Schedule Table -->
+        <main class="bg-white shadow-md rounded-lg overflow-hidden">
+            <div id="loader" class="flex justify-center items-center p-16">
+                <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-blue-500"></div>
+            </div>
+            <div class="overflow-x-auto">
+                <table id="schedule-table" class="min-w-full divide-y divide-gray-200 hidden">
+                    <thead class="bg-gray-100">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable" data-sort="Date">Date</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable" data-sort="TLM">TLM</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable" data-sort="Topic">Topic</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Personnel</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                        <!-- Data will be inserted here by JavaScript -->
+                    </tbody>
+                </table>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRO72s6aR0pRLGcn8uyS-Do5BJ-G3VCFg1pbRJS-QS4j8qYmNK5aj8J2JWhu6BdGLUOrq6wvSrBA4Jy/pub?gid=0&single=true&output=csv';
+
+        let masterScheduleData = [];
+        let currentSort = { column: 'Date', order: 'asc' };
+
+        // --- DATA FETCHING AND PROCESSING ---
+
+        /**
+         * A robust CSV parser that correctly handles quoted fields, including newlines and escaped quotes.
+         * @param {string} csvText The raw CSV string.
+         * @returns {Array<Object>} An array of objects representing the CSV data.
+         */
+        function parseCSV(csvText) {
+            const result = [];
+            let headers = [];
+            let inQuotes = false;
+            let currentCell = '';
+            let currentRow = [];
+            
+            const text = csvText.trim().replace(/\r\n/g, '\n');
+
+            for (let i = 0; i < text.length; i++) {
+                const char = text[i];
+                const nextChar = text[i + 1];
+
+                if (inQuotes) {
+                    if (char === '"' && nextChar === '"') {
+                        currentCell += '"';
+                        i++;
+                    } else if (char === '"') {
+                        inQuotes = false;
+                    } else {
+                        currentCell += char;
+                    }
+                } else {
+                    if (char === '"') {
+                        inQuotes = true;
+                    } else if (char === ',') {
+                        currentRow.push(currentCell);
+                        currentCell = '';
+                    } else if (char === '\n') {
+                        currentRow.push(currentCell);
+                        currentCell = '';
+                        if (headers.length === 0) {
+                            headers = currentRow.map(h => h.trim());
+                        } else {
+                            const entry = {};
+                            headers.forEach((header, index) => {
+                                entry[header] = currentRow[index] || '';
+                            });
+                            result.push(entry);
+                        }
+                        currentRow = [];
+                    } else {
+                        currentCell += char;
+                    }
+                }
+            }
+            if (currentRow.length > 0 || currentCell) {
+                 currentRow.push(currentCell);
+                 const entry = {};
+                 headers.forEach((header, index) => {
+                     entry[header] = currentRow[index] || '';
+                 });
+                 result.push(entry);
+            }
+            return result;
+        }
+
+        /**
+         * Processes raw data into a clean, flat format for the dashboard.
+         * It extracts all personnel into a single array for each class.
+         */
+        function processDashboardData(rawData) {
+            return rawData.map(row => {
+                const personnel = [
+                    row['Faculty 1 Name'], row['Faculty 2 Name'], row['Faculty 3 Name'],
+                    row['SR Name'], row['JR Name']
+                ].filter(name => name && name.trim() !== '');
+                
+                // Convert DD/MM/YYYY to a sortable YYYY-MM-DD format
+                let sortableDate = '';
+                if (row.Date && row.Date.includes('/')) {
+                    const parts = row.Date.split('/');
+                    if (parts.length === 3) {
+                        sortableDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+                    }
+                }
+
+                return { ...row, personnel, sortableDate };
+            }).filter(row => row.Date && row.Date.trim() !== ''); // Ensure row has a date
+        }
+
+        // --- UI AND EVENT HANDLING ---
+
+        /**
+         * Populates the staff selection dropdown with unique names.
+         */
+        function populateStaffDropdown(data) {
+            const staffSelect = document.getElementById('staff-select');
+            const staffNames = new Set();
+            data.forEach(row => {
+                row.personnel.forEach(name => staffNames.add(name.trim()));
+            });
+
+            staffSelect.innerHTML = '<option value="">-- Select Faculty/Resident --</option>';
+            Array.from(staffNames).sort().forEach(name => {
+                const option = document.createElement('option');
+                option.value = name;
+                option.textContent = name;
+                staffSelect.appendChild(option);
+            });
+        }
+
+        /**
+         * Renders the main data table based on current filters and sorting.
+         */
+        function renderTable() {
+            const tableBody = document.getElementById('schedule-table').querySelector('tbody');
+            const searchInput = document.getElementById('search-input').value.toLowerCase();
+
+            // 1. Filter data
+            let filteredData = masterScheduleData;
+            if (searchInput) {
+                filteredData = masterScheduleData.filter(row => {
+                    const personnelString = row.personnel.join(' ').toLowerCase();
+                    const topicString = (row.Topic || '').toLowerCase();
+                    const tlmString = (row.TLM || '').toLowerCase();
+                    const venueString = (row.Venue || '').toLowerCase();
+                    return personnelString.includes(searchInput) ||
+                           topicString.includes(searchInput) ||
+                           tlmString.includes(searchInput) ||
+                           venueString.includes(searchInput);
+                });
+            }
+
+            // 2. Sort data
+            filteredData.sort((a, b) => {
+                let valA = a[currentSort.column] || '';
+                let valB = b[currentSort.column] || '';
+                
+                if (currentSort.column === 'Date') {
+                    valA = a.sortableDate;
+                    valB = b.sortableDate;
+                }
+
+                if (valA < valB) return currentSort.order === 'asc' ? -1 : 1;
+                if (valA > valB) return currentSort.order === 'asc' ? 1 : -1;
+                return 0;
+            });
+
+            // 3. Render rows
+            tableBody.innerHTML = '';
+            if (filteredData.length > 0) {
+                filteredData.forEach(row => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${row.Date}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${row.TLM}</td>
+                        <td class="px-6 py-4 text-sm text-gray-500">${row.Topic}</td>
+                        <td class="px-6 py-4 text-sm text-gray-500">${row.personnel.join(', ')}</td>
+                    `;
+                    tableBody.appendChild(tr);
+                });
+            } else {
+                tableBody.innerHTML = '<tr><td colspan="4" class="text-center py-8 text-gray-500">No results found.</td></tr>';
+            }
+            
+            updateSortHeaders();
+        }
+        
+        /**
+         * Updates the table headers to show the current sort indicator.
+         */
+        function updateSortHeaders() {
+            document.querySelectorAll('.sortable').forEach(th => {
+                th.classList.remove('sort-asc', 'sort-desc');
+                if (th.dataset.sort === currentSort.column) {
+                    th.classList.add(currentSort.order === 'asc' ? 'sort-asc' : 'sort-desc');
+                }
+            });
+        }
+
+        /**
+         * Handles the class counting logic.
+         */
+        function countClasses() {
+            const staffName = document.getElementById('staff-select').value;
+            const dateStr = document.getElementById('count-date').value;
+            const resultEl = document.getElementById('count-result');
+
+            if (!staffName || !dateStr) {
+                resultEl.textContent = 'Please select a person and a date.';
+                resultEl.classList.add('text-red-500');
+                return;
+            }
+            
+            resultEl.classList.remove('text-red-500');
+            const endDate = new Date(dateStr);
+
+            const count = masterScheduleData.filter(row => {
+                const rowDate = new Date(row.sortableDate);
+                return row.personnel.includes(staffName) && rowDate <= endDate;
+            }).length;
+
+            const formattedDate = endDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+            resultEl.textContent = `${staffName} took ${count} class(es) up to ${formattedDate}.`;
+        }
+
+        // --- INITIALIZATION ---
+
+        async function initializeDashboard() {
+            try {
+                const response = await fetch(SHEET_URL);
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                const csvText = await response.text();
+                const rawData = parseCSV(csvText);
+                masterScheduleData = processDashboardData(rawData);
+                
+                populateStaffDropdown(masterScheduleData);
+                renderTable();
+
+                // Set default date for counter to today
+                document.getElementById('count-date').valueAsDate = new Date();
+
+                // Show table and hide loader
+                document.getElementById('loader').style.display = 'none';
+                document.getElementById('schedule-table').classList.remove('hidden');
+
+            } catch (error) {
+                console.error('Failed to initialize dashboard:', error);
+                document.getElementById('loader').innerHTML = '<p class="text-red-500">Failed to load data. Please check the sheet link and format.</p>';
+            }
+        }
+        
+        // Event Listeners
+        document.getElementById('search-input').addEventListener('input', renderTable);
+        document.getElementById('calculate-btn').addEventListener('click', countClasses);
+        document.querySelectorAll('.sortable').forEach(th => {
+            th.addEventListener('click', () => {
+                const column = th.dataset.sort;
+                if (currentSort.column === column) {
+                    currentSort.order = currentSort.order === 'asc' ? 'desc' : 'asc';
+                } else {
+                    currentSort.column = column;
+                    currentSort.order = 'asc';
+                }
+                renderTable();
+            });
+        });
+
+        document.addEventListener('DOMContentLoaded', initializeDashboard);
+    </script>
+</body>
+</html>
