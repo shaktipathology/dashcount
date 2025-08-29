@@ -46,9 +46,10 @@
                 <!-- Class Counter -->
                 <div>
                     <h3 class="text-lg font-semibold text-gray-700 mb-2">Class Count Calculator</h3>
-                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <select id="staff-select" class="p-2 border border-gray-300 rounded-md col-span-1 sm:col-span-2"></select>
-                        <input type="date" id="count-date" class="p-2 border border-gray-300 rounded-md">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <select id="staff-select" class="p-2 border border-gray-300 rounded-md col-span-2"></select>
+                        <input type="date" id="count-date-from" class="p-2 border border-gray-300 rounded-md" title="From Date">
+                        <input type="date" id="count-date-to" class="p-2 border border-gray-300 rounded-md" title="To Date">
                     </div>
                     <button id="calculate-btn" class="mt-3 w-full bg-blue-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-blue-700 transition duration-200">Calculate</button>
                     <p id="count-result" class="mt-3 text-center font-semibold text-gray-800 h-6"></p>
@@ -68,7 +69,8 @@
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable" data-sort="Date">Date</th>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable" data-sort="TLM">TLM</th>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable" data-sort="Topic">Topic</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Personnel</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Faculty</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SR / JR</th>
                         </tr>
                     </thead>
                     <tbody class="bg-white divide-y divide-gray-200">
@@ -151,12 +153,15 @@
 
         /**
          * Processes raw data into a clean, flat format for the dashboard.
-         * It extracts all personnel into a single array for each class.
+         * It extracts all personnel into separate arrays for faculty and residents.
          */
         function processDashboardData(rawData) {
             return rawData.map(row => {
-                const personnel = [
-                    row['Faculty 1 Name'], row['Faculty 2 Name'], row['Faculty 3 Name'],
+                const faculty = [
+                    row['Faculty 1 Name'], row['Faculty 2 Name'], row['Faculty 3 Name']
+                ].filter(name => name && name.trim() !== '');
+                
+                const residents = [
                     row['SR Name'], row['JR Name']
                 ].filter(name => name && name.trim() !== '');
                 
@@ -169,7 +174,7 @@
                     }
                 }
 
-                return { ...row, personnel, sortableDate };
+                return { ...row, faculty, residents, sortableDate };
             }).filter(row => row.Date && row.Date.trim() !== ''); // Ensure row has a date
         }
 
@@ -182,7 +187,8 @@
             const staffSelect = document.getElementById('staff-select');
             const staffNames = new Set();
             data.forEach(row => {
-                row.personnel.forEach(name => staffNames.add(name.trim()));
+                row.faculty.forEach(name => staffNames.add(name.trim()));
+                row.residents.forEach(name => staffNames.add(name.trim()));
             });
 
             staffSelect.innerHTML = '<option value="">-- Select Faculty/Resident --</option>';
@@ -205,7 +211,7 @@
             let filteredData = masterScheduleData;
             if (searchInput) {
                 filteredData = masterScheduleData.filter(row => {
-                    const personnelString = row.personnel.join(' ').toLowerCase();
+                    const personnelString = [...row.faculty, ...row.residents].join(' ').toLowerCase();
                     const topicString = (row.Topic || '').toLowerCase();
                     const tlmString = (row.TLM || '').toLowerCase();
                     const venueString = (row.Venue || '').toLowerCase();
@@ -240,12 +246,13 @@
                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${row.Date}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${row.TLM}</td>
                         <td class="px-6 py-4 text-sm text-gray-500">${row.Topic}</td>
-                        <td class="px-6 py-4 text-sm text-gray-500">${row.personnel.join(', ')}</td>
+                        <td class="px-6 py-4 text-sm text-gray-500">${row.faculty.join(', ')}</td>
+                        <td class="px-6 py-4 text-sm text-gray-500">${row.residents.join(', ')}</td>
                     `;
                     tableBody.appendChild(tr);
                 });
             } else {
-                tableBody.innerHTML = '<tr><td colspan="4" class="text-center py-8 text-gray-500">No results found.</td></tr>';
+                tableBody.innerHTML = '<tr><td colspan="5" class="text-center py-8 text-gray-500">No results found.</td></tr>';
             }
             
             updateSortHeaders();
@@ -268,25 +275,29 @@
          */
         function countClasses() {
             const staffName = document.getElementById('staff-select').value;
-            const dateStr = document.getElementById('count-date').value;
+            const fromDateStr = document.getElementById('count-date-from').value;
+            const toDateStr = document.getElementById('count-date-to').value;
             const resultEl = document.getElementById('count-result');
 
-            if (!staffName || !dateStr) {
-                resultEl.textContent = 'Please select a person and a date.';
+            if (!staffName || !fromDateStr || !toDateStr) {
+                resultEl.textContent = 'Please select a person and a date range.';
                 resultEl.classList.add('text-red-500');
                 return;
             }
             
             resultEl.classList.remove('text-red-500');
-            const endDate = new Date(dateStr);
+            const startDate = new Date(fromDateStr);
+            const endDate = new Date(toDateStr);
 
             const count = masterScheduleData.filter(row => {
                 const rowDate = new Date(row.sortableDate);
-                return row.personnel.includes(staffName) && rowDate <= endDate;
+                const personnel = [...row.faculty, ...row.residents];
+                return personnel.includes(staffName) && rowDate >= startDate && rowDate <= endDate;
             }).length;
 
-            const formattedDate = endDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
-            resultEl.textContent = `${staffName} took ${count} class(es) up to ${formattedDate}.`;
+            const formattedFrom = startDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+            const formattedTo = endDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+            resultEl.textContent = `${staffName} took ${count} class(es) from ${formattedFrom} to ${formattedTo}.`;
         }
 
         // --- INITIALIZATION ---
@@ -302,8 +313,12 @@
                 populateStaffDropdown(masterScheduleData);
                 renderTable();
 
-                // Set default date for counter to today
-                document.getElementById('count-date').valueAsDate = new Date();
+                // Set default dates for counter
+                const today = new Date();
+                const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+                document.getElementById('count-date-from').valueAsDate = firstDayOfMonth;
+                document.getElementById('count-date-to').valueAsDate = today;
+
 
                 // Show table and hide loader
                 document.getElementById('loader').style.display = 'none';
