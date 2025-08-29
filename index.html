@@ -36,24 +36,9 @@
 
         <!-- Controls Section -->
         <section class="bg-white shadow-md rounded-lg p-6 mb-8">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <!-- Search and Sort -->
-                <div>
-                    <h3 class="text-lg font-semibold text-gray-700 mb-2">Search & Filter</h3>
-                    <input type="text" id="search-input" placeholder="Search by Topic, Faculty, Venue etc..." class="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                </div>
-
-                <!-- Class Counter -->
-                <div>
-                    <h3 class="text-lg font-semibold text-gray-700 mb-2">Class Count Calculator</h3>
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <select id="staff-select" class="p-2 border border-gray-300 rounded-md col-span-2"></select>
-                        <input type="date" id="count-date-from" class="p-2 border border-gray-300 rounded-md" title="From Date">
-                        <input type="date" id="count-date-to" class="p-2 border border-gray-300 rounded-md" title="To Date">
-                    </div>
-                    <button id="calculate-btn" class="mt-3 w-full bg-blue-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-blue-700 transition duration-200">Calculate</button>
-                    <p id="count-result" class="mt-3 text-center font-semibold text-gray-800 h-6"></p>
-                </div>
+            <div>
+                <h3 class="text-lg font-semibold text-gray-700 mb-2">Search & Filter</h3>
+                <input type="text" id="search-input" placeholder="Search by Topic, Faculty, Venue etc..." class="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent">
             </div>
         </section>
 
@@ -85,7 +70,7 @@
         const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRO72s6aR0pRLGcn8uyS-Do5BJ-G3VCFg1pbRJS-QS4j8qYmNK5aj8J2JWhu6BdGLUOrq6wvSrBA4Jy/pub?gid=0&single=true&output=csv';
 
         let masterScheduleData = [];
-        let currentSort = { column: 'Date', order: 'asc' };
+        let currentSort = { column: 'Date', order: 'desc' }; // Default sort to descending date
 
         // --- DATA FETCHING AND PROCESSING ---
 
@@ -181,26 +166,6 @@
         // --- UI AND EVENT HANDLING ---
 
         /**
-         * Populates the staff selection dropdown with unique names.
-         */
-        function populateStaffDropdown(data) {
-            const staffSelect = document.getElementById('staff-select');
-            const staffNames = new Set();
-            data.forEach(row => {
-                row.faculty.forEach(name => staffNames.add(name.trim()));
-                row.residents.forEach(name => staffNames.add(name.trim()));
-            });
-
-            staffSelect.innerHTML = '<option value="">-- Select Faculty/Resident --</option>';
-            Array.from(staffNames).sort().forEach(name => {
-                const option = document.createElement('option');
-                option.value = name;
-                option.textContent = name;
-                staffSelect.appendChild(option);
-            });
-        }
-
-        /**
          * Renders the main data table based on current filters and sorting.
          */
         function renderTable() {
@@ -270,36 +235,6 @@
             });
         }
 
-        /**
-         * Handles the class counting logic.
-         */
-        function countClasses() {
-            const staffName = document.getElementById('staff-select').value;
-            const fromDateStr = document.getElementById('count-date-from').value;
-            const toDateStr = document.getElementById('count-date-to').value;
-            const resultEl = document.getElementById('count-result');
-
-            if (!staffName || !fromDateStr || !toDateStr) {
-                resultEl.textContent = 'Please select a person and a date range.';
-                resultEl.classList.add('text-red-500');
-                return;
-            }
-            
-            resultEl.classList.remove('text-red-500');
-            const startDate = new Date(fromDateStr);
-            const endDate = new Date(toDateStr);
-
-            const count = masterScheduleData.filter(row => {
-                const rowDate = new Date(row.sortableDate);
-                const personnel = [...row.faculty, ...row.residents];
-                return personnel.includes(staffName) && rowDate >= startDate && rowDate <= endDate;
-            }).length;
-
-            const formattedFrom = startDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-            const formattedTo = endDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-            resultEl.textContent = `${staffName} took ${count} class(es) from ${formattedFrom} to ${formattedTo}.`;
-        }
-
         // --- INITIALIZATION ---
 
         async function initializeDashboard() {
@@ -308,17 +243,14 @@
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                 const csvText = await response.text();
                 const rawData = parseCSV(csvText);
-                masterScheduleData = processDashboardData(rawData);
+                let processedData = processDashboardData(rawData);
                 
-                populateStaffDropdown(masterScheduleData);
-                renderTable();
-
-                // Set default dates for counter
+                // Filter data to only show entries up to the current date
                 const today = new Date();
-                const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-                document.getElementById('count-date-from').valueAsDate = firstDayOfMonth;
-                document.getElementById('count-date-to').valueAsDate = today;
-
+                const todayStr = today.toISOString().split('T')[0]; // YYYY-MM-DD
+                masterScheduleData = processedData.filter(row => row.sortableDate <= todayStr);
+                
+                renderTable();
 
                 // Show table and hide loader
                 document.getElementById('loader').style.display = 'none';
@@ -332,7 +264,6 @@
         
         // Event Listeners
         document.getElementById('search-input').addEventListener('input', renderTable);
-        document.getElementById('calculate-btn').addEventListener('click', countClasses);
         document.querySelectorAll('.sortable').forEach(th => {
             th.addEventListener('click', () => {
                 const column = th.dataset.sort;
